@@ -80,8 +80,8 @@ export default function GameLobby({
           </form>
         </div>
 
-        <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 p-5 text-white dark:border-slate-700">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-white">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-300">
             Waiting Players
           </h2>
           <div className="mt-4 grid gap-3">
@@ -90,12 +90,12 @@ export default function GameLobby({
               return (
                 <div
                   key={index}
-                  className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 text-sm"
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
                 >
-                  <span className="font-semibold text-white">
+                  <span className="font-semibold text-slate-900 dark:text-white">
                     {player?.player_name || player?.color || 'Open slot'}
                   </span>
-                  <span className="text-xs text-slate-300">
+                  <span className="text-xs text-slate-400 dark:text-slate-400">
                     {player ? 'Joined' : 'Waiting'}
                   </span>
                 </div>
@@ -107,8 +107,8 @@ export default function GameLobby({
             type="button"
             onClick={onStartGame}
             disabled={players?.length !== 4}
-          className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-white"
-        >
+            className="mt-6 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900"
+          >
             Start Game
           </button>
         </div>

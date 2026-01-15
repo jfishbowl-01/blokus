@@ -9,10 +9,10 @@ const COLOR_CLASSES = {
 };
 
 const PREVIEW_FILL_CLASSES = {
-  blue: 'bg-blue-400/70 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  yellow: 'bg-amber-300/70 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  red: 'bg-red-400/70 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  green: 'bg-emerald-400/70 shadow-[0_1px_2px_rgba(15,23,42,0.2)]'
+  blue: 'bg-blue-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
+  yellow: 'bg-amber-300/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
+  red: 'bg-red-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
+  green: 'bg-emerald-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]'
 };
 
 const PENDING_FILL_CLASSES = {
@@ -69,6 +69,7 @@ export default function GameBoard({
   isFirstMove,
   pendingPlacement,
   lastMovePositions,
+  compact,
   onDropPlacement,
   onClearPending
 }) {
@@ -150,11 +151,8 @@ export default function GameBoard({
       onMouseUp={handlePointerUp}
     >
       <div
-        className="grid"
-        style={{
-          gridTemplateColumns: 'repeat(20, 30px)',
-          gridTemplateRows: 'repeat(20, 30px)'
-        }}
+        className="board-grid grid"
+        style={compact ? { '--cell-size': '24px' } : undefined}
       >
         {grid.map((row, y) =>
           row.map((cell, x) => {
@@ -199,7 +197,7 @@ export default function GameBoard({
                 onPointerDown={() => handlePointerDown(x, y)}
                 onPointerUp={handlePointerUp}
                 onFocus={() => setHoverCell({ x, y })}
-                className={`preview-cell relative h-[30px] w-[30px] border ${borderClass} ${
+                className={`preview-cell board-cell relative border ${borderClass} ${
                   cell ? COLOR_CLASSES[cell] : 'bg-white dark:bg-slate-900'
                 } ${pendingFill} ${pendingClass} ${previewFill} ${previewClass} ${
                   isLastMove ? 'place-settle' : ''

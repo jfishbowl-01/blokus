@@ -32,6 +32,7 @@ export default function App() {
   const [pendingPlacement, setPendingPlacement] = useState(null);
   const [screen, setScreen] = useState('home');
   const [aiDifficulty, setAiDifficulty] = useState('easy');
+  const [isCompactBoard, setIsCompactBoard] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem('blokus-theme');
@@ -357,7 +358,16 @@ export default function App() {
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-emerald-200/50 blur-3xl dark:bg-slate-800/40" />
 
       <div className="relative mx-auto max-w-6xl p-6">
-        <div className="mb-6 flex justify-end">
+        <div className="mb-6 flex flex-wrap justify-end gap-2">
+          {isPlaying ? (
+            <button
+              type="button"
+              onClick={() => setIsCompactBoard((prev) => !prev)}
+              className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
+            >
+              {isCompactBoard ? 'Full Board' : 'Compact Board'}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setIsDarkMode((prev) => !prev)}
@@ -440,6 +450,7 @@ export default function App() {
                 isFirstMove={isFirstMove}
                 pendingPlacement={pendingPlacement}
                 lastMovePositions={lastMovePositions}
+                compact={isCompactBoard}
                 onDropPlacement={setPendingPlacement}
                 onClearPending={() => setPendingPlacement(null)}
               />

@@ -91,7 +91,7 @@ export default function PiecePalette({
         ) : null}
       </div>
       <div className="mt-3 rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),rgba(241,245,249,0.95))] p-3 shadow-inner dark:border-slate-700 dark:bg-[radial-gradient(circle_at_top,rgba(30,41,59,0.95),rgba(15,23,42,0.95))]">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {PIECES.map((piece) => {
             const isAvailable = remainingIds.has(piece.id);
             return (
