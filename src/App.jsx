@@ -102,6 +102,11 @@ export default function App() {
   const wasPlayerTurnRef = useRef(false);
   const noMovesTurnKeyRef = useRef(null);
 
+  const isFirstMove = useMemo(() => {
+    if (!currentTurn) return false;
+    return !moves.some((move) => move.player_id === currentTurn.id);
+  }, [moves, currentTurn]);
+
   useEffect(() => {
     if (soundEnabled && isPlayerTurn && !wasPlayerTurnRef.current) {
       playTurnSound();
@@ -141,11 +146,6 @@ export default function App() {
       setPendingPlacement(null);
     }
   }, [selectedPiece, pieceTransform, currentTurn]);
-
-  const isFirstMove = useMemo(() => {
-    if (!currentTurn) return false;
-    return !moves.some((move) => move.player_id === currentTurn.id);
-  }, [moves, currentTurn]);
 
   const scores = useMemo(() => {
     if (!playersSorted.length) return [];
