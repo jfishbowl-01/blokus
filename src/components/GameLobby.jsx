@@ -8,7 +8,9 @@ export default function GameLobby({
   onJoinGame,
   onStartGame,
   showOffline,
-  onStartOffline
+  onStartOffline,
+  showFillAI,
+  onFillWithAI
 }) {
   const [roomCode, setRoomCode] = useState('');
   const [playerName, setPlayerName] = useState('');
@@ -111,6 +113,15 @@ export default function GameLobby({
           >
             Start Game
           </button>
+          {showFillAI ? (
+            <button
+              type="button"
+              onClick={onFillWithAI}
+              className="mt-3 w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 dark:border-slate-600 dark:text-slate-200"
+            >
+              Fill With AI
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

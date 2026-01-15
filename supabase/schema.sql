@@ -15,11 +15,15 @@ CREATE TABLE IF NOT EXISTS players (
   player_name TEXT,
   has_passed BOOLEAN DEFAULT FALSE,
   remaining_pieces JSONB DEFAULT '[]',
+  is_ai BOOLEAN DEFAULT FALSE,
   join_order INT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(game_id, color),
   UNIQUE(game_id, join_order)
 );
+
+ALTER TABLE IF EXISTS players
+  ADD COLUMN IF NOT EXISTS is_ai BOOLEAN DEFAULT FALSE;
 
 -- Moves table
 CREATE TABLE IF NOT EXISTS moves (

@@ -70,6 +70,7 @@ export default function GameBoard({
   pendingPlacement,
   lastMovePositions,
   compact,
+  isInteractive = true,
   onDropPlacement,
   onClearPending
 }) {
@@ -82,16 +83,16 @@ export default function GameBoard({
   );
 
   const previewCells = useMemo(() => {
-    if (!hoverCell || !piece) return [];
+    if (!hoverCell || !piece || !isInteractive) return [];
     if (pendingPlacement?.length && !isDragging) return [];
     return transformedCoords.map(([x, y]) => ({
       x: x + hoverCell.x,
       y: y + hoverCell.y
     }));
-  }, [hoverCell, piece, transformedCoords, pendingPlacement, isDragging]);
+  }, [hoverCell, piece, transformedCoords, pendingPlacement, isDragging, isInteractive]);
 
   const isPlacementValid = useMemo(() => {
-    if (!piece || !hoverCell) return false;
+    if (!piece || !hoverCell || !isInteractive) return false;
     return isValidPlacement(
       grid,
       { ...piece, coords: transformedCoords },
@@ -121,20 +122,20 @@ export default function GameBoard({
   }, [lastMovePositions]);
 
   const handlePointerDown = (x, y) => {
-    if (!piece) return;
+    if (!piece || !isInteractive) return;
     if (onClearPending) onClearPending();
     setIsDragging(true);
     setHoverCell({ x, y });
   };
 
   const handlePointerEnter = (x, y) => {
-    if (isDragging) {
+    if (isDragging && isInteractive) {
       setHoverCell({ x, y });
     }
   };
 
   const handlePointerUp = () => {
-    if (!isDragging) return;
+    if (!isDragging || !isInteractive) return;
     setIsDragging(false);
     if (!piece || !hoverCell) return;
     if (!isPlacementValid) return;
@@ -192,11 +193,17 @@ export default function GameBoard({
               <button
                 key={`${x}-${y}`}
                 type="button"
-                onMouseEnter={() => setHoverCell({ x, y })}
+                onMouseEnter={() => {
+                  if (!isInteractive) return;
+                  setHoverCell({ x, y });
+                }}
                 onPointerEnter={() => handlePointerEnter(x, y)}
                 onPointerDown={() => handlePointerDown(x, y)}
                 onPointerUp={handlePointerUp}
-                onFocus={() => setHoverCell({ x, y })}
+                onFocus={() => {
+                  if (!isInteractive) return;
+                  setHoverCell({ x, y });
+                }}
                 className={`preview-cell board-cell relative border ${borderClass} ${
                   cell ? COLOR_CLASSES[cell] : 'bg-white dark:bg-slate-900'
                 } ${pendingFill} ${pendingClass} ${previewFill} ${previewClass} ${

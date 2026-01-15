@@ -68,6 +68,7 @@ function PiecePreview({ piece, transform, selected, colorClass }) {
 export default function PiecePalette({
   player,
   isActive,
+  isDisabled,
   selectedPieceId,
   onSelectPiece,
   transform
@@ -80,7 +81,9 @@ export default function PiecePalette({
     <div
       className={`rounded-2xl border bg-white/80 p-4 transition ${
         player?.color ? `border-2 ${COLOR_STYLES[player.color]} shadow-lg` : 'border-slate-200'
-      } ${isActive ? 'ring-2 ring-slate-900/20' : ''} dark:border-slate-700 dark:bg-slate-900/80`}
+      } ${isActive ? 'ring-2 ring-slate-900/20' : ''} ${
+        isDisabled ? 'pointer-events-none opacity-60' : ''
+      } dark:border-slate-700 dark:bg-slate-900/80`}
     >
       <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
         <span className="uppercase tracking-[0.2em]">Pieces</span>

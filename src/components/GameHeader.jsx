@@ -5,7 +5,14 @@ const COLOR_STYLES = {
   green: 'bg-emerald-500'
 };
 
-export default function GameHeader({ game, players, currentTurn, isPlayerTurn, onPass }) {
+export default function GameHeader({
+  game,
+  players,
+  currentTurn,
+  isPlayerTurn,
+  currentPlayerId,
+  onPass
+}) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/80 px-5 py-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-none">
       <div className="flex items-center gap-3">
@@ -43,6 +50,7 @@ export default function GameHeader({ game, players, currentTurn, isPlayerTurn, o
       <div className="flex flex-wrap gap-2">
         {players.map((player) => {
           const isActive = currentTurn?.id === player.id;
+          const isYou = currentPlayerId === player.id;
           return (
             <div
               key={player.id}
@@ -54,6 +62,11 @@ export default function GameHeader({ game, players, currentTurn, isPlayerTurn, o
             >
               <span className={`h-2 w-2 rounded-full ${COLOR_STYLES[player.color]}`} />
               <span>{player.player_name || player.color}</span>
+              {isYou ? (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase dark:bg-slate-800">
+                  You
+                </span>
+              ) : null}
               {isActive ? (
                 <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
                   Active

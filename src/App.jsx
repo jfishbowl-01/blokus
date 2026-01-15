@@ -33,6 +33,7 @@ export default function App() {
   const [screen, setScreen] = useState('home');
   const [aiDifficulty, setAiDifficulty] = useState('easy');
   const [isCompactBoard, setIsCompactBoard] = useState(false);
+  const [aiDriverGameId, setAiDriverGameId] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem('blokus-theme');
@@ -59,6 +60,7 @@ export default function App() {
     placePiece,
     passTurn
   } = gameApi;
+  const { addAiPlayers, placePieceForPlayer, passPlayer } = supabaseGame;
 
   const {
     grid,
@@ -74,6 +76,8 @@ export default function App() {
     () => getPieceById(selectedPiece),
     [selectedPiece]
   );
+
+  const isPlayerTurn = currentTurn?.id === currentPlayer?.id;
 
   useEffect(() => {
     if (pendingPlacement) {
@@ -241,12 +245,22 @@ export default function App() {
     setSelectedPiece(null);
     setPieceTransform({ rotation: 0, flipH: false, flipV: false });
     setPendingPlacement(null);
+    setAiDriverGameId(null);
     setScreen('home');
   };
 
   const handleStartOffline = async () => {
     setUseOfflineMode(true);
     await offlineGame.createGame();
+    setAiDriverGameId(null);
+  };
+
+  const handleFillWithAI = async () => {
+    if (!game || useOfflineMode) return;
+    const result = await addAiPlayers(game.id);
+    if (result?.length) {
+      setAiDriverGameId(game.id);
+    }
   };
 
   const handleStartSinglePlayer = async (playerName) => {
@@ -303,9 +317,12 @@ export default function App() {
   }, [pendingPlacement, handleConfirmPlacement]);
 
   useEffect(() => {
-    if (!useOfflineMode || !game || game.status !== 'active') return;
+    if (!game || game.status !== 'active') return;
     if (!currentTurn || !currentTurn.is_ai) return;
     if (currentTurn.has_passed) return;
+
+    const canDriveAi = useOfflineMode || aiDriverGameId === game.id;
+    if (!canDriveAi) return;
 
     let cancelled = false;
     const runAiTurn = async () => {
@@ -322,30 +339,71 @@ export default function App() {
       await new Promise((resolve) => setTimeout(resolve, 500));
       if (cancelled) return;
 
+      if (useOfflineMode) {
+        let nextPlayers = playersSorted;
+        if (move) {
+          const result = applyOfflineMove(currentTurn.id, move.pieceId, move.gridPositions);
+          nextPlayers = result?.nextPlayers || playersSorted;
+        } else {
+          nextPlayers = applyOfflinePass(currentTurn.id) || playersSorted;
+        }
+
+        const allPassed = nextPlayers.every((player) => player.has_passed);
+
+        if (allPassed) {
+          setGame({ ...game, status: 'finished' });
+          return;
+        }
+
+        const nextIndex = getNextPlayerIndex(nextPlayers, game.current_player_index);
+        setGame({ ...game, current_player_index: nextIndex });
+        return;
+      }
+
       let nextPlayers = playersSorted;
       if (move) {
-        const result = applyOfflineMove(currentTurn.id, move.pieceId, move.gridPositions);
-        nextPlayers = result?.nextPlayers || playersSorted;
+        await placePieceForPlayer(currentTurn.id, move.pieceId, move.gridPositions);
+        nextPlayers = playersSorted.map((player) =>
+          player.id === currentTurn.id
+            ? {
+                ...player,
+                remaining_pieces: player.remaining_pieces.filter((id) => id !== move.pieceId)
+              }
+            : player
+        );
       } else {
-        nextPlayers = applyOfflinePass(currentTurn.id) || playersSorted;
+        await passPlayer(currentTurn.id);
+        nextPlayers = playersSorted.map((player) =>
+          player.id === currentTurn.id ? { ...player, has_passed: true } : player
+        );
       }
 
       const allPassed = nextPlayers.every((player) => player.has_passed);
-
       if (allPassed) {
-        setGame({ ...game, status: 'finished' });
+        await supabase.from('games').update({ status: 'finished' }).eq('id', game.id);
         return;
       }
 
       const nextIndex = getNextPlayerIndex(nextPlayers, game.current_player_index);
-      setGame({ ...game, current_player_index: nextIndex });
+      await supabase.from('games').update({ current_player_index: nextIndex }).eq('id', game.id);
     };
 
     runAiTurn();
     return () => {
       cancelled = true;
     };
-  }, [useOfflineMode, game, currentTurn, grid, moves, playersSorted, aiDifficulty]);
+  }, [
+    useOfflineMode,
+    aiDriverGameId,
+    game,
+    currentTurn,
+    grid,
+    moves,
+    playersSorted,
+    aiDifficulty,
+    placePieceForPlayer,
+    passPlayer
+  ]);
 
   const showHome = screen === 'home';
   const showSingleSetup = screen === 'single-setup';
@@ -421,6 +479,8 @@ export default function App() {
               onStartGame={handleStartGame}
               showOffline={!useOfflineMode}
               onStartOffline={handleStartOffline}
+              showFillAI={!useOfflineMode && playersSorted.length > 0 && playersSorted.length < 4}
+              onFillWithAI={handleFillWithAI}
             />
           </div>
         ) : game?.status === 'finished' ? (
@@ -432,6 +492,7 @@ export default function App() {
               players={playersSorted}
               currentTurn={currentTurn}
               isPlayerTurn={currentTurn?.id === currentPlayer?.id}
+              currentPlayerId={currentPlayer?.id}
               onPass={handlePass}
             />
 
@@ -451,6 +512,7 @@ export default function App() {
                 pendingPlacement={pendingPlacement}
                 lastMovePositions={lastMovePositions}
                 compact={isCompactBoard}
+                isInteractive={isPlayerTurn}
                 onDropPlacement={setPendingPlacement}
                 onClearPending={() => setPendingPlacement(null)}
               />
@@ -459,6 +521,7 @@ export default function App() {
                 <PiecePalette
                   player={currentPlayer}
                   isActive={currentTurn?.id === currentPlayer?.id}
+                  isDisabled={!isPlayerTurn}
                   selectedPieceId={selectedPiece}
                   onSelectPiece={setSelectedPiece}
                   transform={pieceTransform}

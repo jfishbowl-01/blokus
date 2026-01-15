@@ -82,6 +82,61 @@ export function useSupabaseGame() {
     return createdGame;
   }, []);
 
+  const addAiPlayers = useCallback(async (gameId) => {
+    if (!gameId) return null;
+    setLoading(true);
+    setError(null);
+
+    const { data: playersData, error: playersError } = await supabase
+      .from('players')
+      .select('*')
+      .eq('game_id', gameId)
+      .order('join_order');
+
+    if (playersError) {
+      setLoading(false);
+      setError(playersError);
+      return null;
+    }
+
+    const takenColors = new Set(playersData.map((player) => player.color));
+    const takenOrders = new Set(playersData.map((player) => player.join_order));
+    const availableColors = COLORS.filter((color) => !takenColors.has(color));
+    const availableOrders = COLORS.map((_, index) => index).filter((index) => !takenOrders.has(index));
+
+    if (!availableColors.length) {
+      setLoading(false);
+      return [];
+    }
+
+    const aiRows = availableColors.map((color, index) => ({
+      game_id: gameId,
+      player_name: `AI ${color[0].toUpperCase()}${color.slice(1)}`,
+      color,
+      join_order: availableOrders[index] ?? playersData.length + index,
+      remaining_pieces: getAllPieceIds(),
+      is_ai: true
+    }));
+
+    const { data: insertedPlayers, error: insertError } = await supabase
+      .from('players')
+      .insert(aiRows)
+      .select('*');
+
+    setLoading(false);
+
+    if (insertError) {
+      setError(insertError);
+      return null;
+    }
+
+    const merged = [...playersData, ...(insertedPlayers || [])].sort(
+      (a, b) => a.join_order - b.join_order
+    );
+    setPlayers(merged);
+    return insertedPlayers || [];
+  }, []);
+
   const joinGame = useCallback(async (roomCode, playerName) => {
     setLoading(true);
     setError(null);
@@ -125,7 +180,8 @@ export function useSupabaseGame() {
         player_name: playerName,
         color,
         join_order: joinOrder,
-        remaining_pieces: getAllPieceIds()
+        remaining_pieces: getAllPieceIds(),
+        is_ai: false
       })
       .select('*')
       .single();
@@ -142,6 +198,82 @@ export function useSupabaseGame() {
     setCurrentPlayer(playerData);
     return playerData;
   }, []);
+
+  const placePieceForPlayer = useCallback(
+    async (playerId, pieceId, gridPositions) => {
+      if (!game || !playerId) {
+        setError(new Error('Missing game or player context'));
+        return null;
+      }
+
+      const { data: moveData, error: moveError } = await supabase
+        .from('moves')
+        .insert({
+          game_id: game.id,
+          player_id: playerId,
+          piece_id: pieceId,
+          grid_positions: gridPositions
+        })
+        .select('*')
+        .single();
+
+      if (moveError) {
+        setError(moveError);
+        return null;
+      }
+
+      const player = playersById.get(playerId);
+      const updatedRemaining = (player?.remaining_pieces || []).filter((id) => id !== pieceId);
+
+      const { data: updatedPlayer, error: updateError } = await supabase
+        .from('players')
+        .update({ remaining_pieces: updatedRemaining })
+        .eq('id', playerId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        setError(updateError);
+        return moveData;
+      }
+
+      setMoves((prev) => [...prev, moveData]);
+      setPlayers((prev) => prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p)));
+      if (currentPlayer?.id === updatedPlayer.id) {
+        setCurrentPlayer(updatedPlayer);
+      }
+      return moveData;
+    },
+    [game, playersById, currentPlayer]
+  );
+
+  const passPlayer = useCallback(
+    async (playerId) => {
+      if (!game || !playerId) {
+        setError(new Error('Missing game or player context'));
+        return null;
+      }
+
+      const { data: updatedPlayer, error: updateError } = await supabase
+        .from('players')
+        .update({ has_passed: true })
+        .eq('id', playerId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        setError(updateError);
+        return null;
+      }
+
+      setPlayers((prev) => prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p)));
+      if (currentPlayer?.id === updatedPlayer.id) {
+        setCurrentPlayer(updatedPlayer);
+      }
+      return updatedPlayer;
+    },
+    [game, currentPlayer]
+  );
 
   const placePiece = useCallback(
     async (pieceId, gridPositions) => {
@@ -262,9 +394,12 @@ export function useSupabaseGame() {
     setMoves,
     setCurrentPlayer,
     createGame,
+    addAiPlayers,
     joinGame,
     placePiece,
+    placePieceForPlayer,
     passTurn,
+    passPlayer,
     fetchGameData,
     subscribeToGame,
     playersById
