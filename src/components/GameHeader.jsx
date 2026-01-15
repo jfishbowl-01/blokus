@@ -41,25 +41,37 @@ export default function GameHeader({ game, players, currentTurn, isPlayerTurn, o
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {players.map((player) => (
-          <div
-            key={player.id}
-            className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
-          >
-            <span className={`h-2 w-2 rounded-full ${COLOR_STYLES[player.color]}`} />
-            <span>{player.player_name || player.color}</span>
-            {player.is_ai ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase dark:bg-slate-800">
-                AI
-              </span>
-            ) : null}
-            {player.has_passed ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase dark:bg-slate-800">
-                Passed
-              </span>
-            ) : null}
-          </div>
-        ))}
+        {players.map((player) => {
+          const isActive = currentTurn?.id === player.id;
+          return (
+            <div
+              key={player.id}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-slate-600 dark:text-slate-200 ${
+                isActive
+                  ? 'border-slate-400 bg-slate-50 font-semibold shadow-sm dark:border-slate-500 dark:bg-slate-800'
+                  : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/80'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${COLOR_STYLES[player.color]}`} />
+              <span>{player.player_name || player.color}</span>
+              {isActive ? (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                  Active
+                </span>
+              ) : null}
+              {player.is_ai ? (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase dark:bg-slate-800">
+                  AI
+                </span>
+              ) : null}
+              {player.has_passed ? (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase dark:bg-slate-800">
+                  Passed
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
