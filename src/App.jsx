@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import GameBoard from './components/GameBoard.jsx';
 import GameHeader from './components/GameHeader.jsx';
 import GameLobby from './components/GameLobby.jsx';
@@ -13,7 +13,7 @@ import { useOfflineGame } from './hooks/useOfflineGame.js';
 import { useSupabaseGame } from './hooks/useSupabaseGame.js';
 import { isSupabaseConfigured, supabase } from './lib/supabase.js';
 import { findMoveForPlayer } from './utils/ai.js';
-import { playPlacementSound } from './utils/sound.js';
+import { playPlacementSound, playTurnSound } from './utils/sound.js';
 import { getPieceById, PIECES } from './utils/pieces.js';
 import { calculateScore } from './utils/scoring.js';
 import { resolveDisplayColor } from './utils/colors.js';
@@ -53,6 +53,7 @@ export default function App() {
     if (stored === 'off') return false;
     return true;
   });
+  const [showNoMovesModal, setShowNoMovesModal] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem('blokus-theme');
@@ -98,6 +99,42 @@ export default function App() {
   );
 
   const isPlayerTurn = currentTurn?.id === currentPlayer?.id;
+  const wasPlayerTurnRef = useRef(false);
+  const noMovesTurnKeyRef = useRef(null);
+
+  useEffect(() => {
+    if (soundEnabled && isPlayerTurn && !wasPlayerTurnRef.current) {
+      playTurnSound();
+    }
+    wasPlayerTurnRef.current = Boolean(isPlayerTurn);
+  }, [isPlayerTurn, soundEnabled]);
+
+  useEffect(() => {
+    if (!isPlayerTurn || !currentTurn || currentTurn.has_passed) {
+      setShowNoMovesModal(false);
+      noMovesTurnKeyRef.current = null;
+      return;
+    }
+
+    const noMovesKey = `${currentTurn.id}-${moves.length}`;
+    if (noMovesTurnKeyRef.current === noMovesKey) return;
+
+    const move = findMoveForPlayer({
+      grid,
+      playerColor: currentTurn.color,
+      remainingPieceIds: currentTurn.remaining_pieces,
+      isFirstMove,
+      randomize: false,
+      difficulty: 'easy'
+    });
+
+    if (!move) {
+      setShowNoMovesModal(true);
+      noMovesTurnKeyRef.current = noMovesKey;
+    } else {
+      setShowNoMovesModal(false);
+    }
+  }, [isPlayerTurn, currentTurn, moves.length, grid, isFirstMove]);
 
   useEffect(() => {
     if (pendingPlacement) {
@@ -127,6 +164,9 @@ export default function App() {
   const placements = useMemo(() => {
     return [...scores].sort((a, b) => a.score - b.score);
   }, [scores]);
+  const totalPoints = useMemo(() => {
+    return scores.reduce((sum, entry) => sum + entry.score, 0);
+  }, [scores]);
 
   const canUndo = useMemo(() => {
     if (!useOfflineMode) return false;
@@ -147,12 +187,17 @@ export default function App() {
 
   const handleStartGame = async () => {
     if (!game) return;
+    const playerCount = playersSorted.length;
+    const randomIndex = playerCount ? Math.floor(Math.random() * playerCount) : 0;
     if (useOfflineMode) {
-      setGame({ ...game, status: 'active' });
+      setGame({ ...game, status: 'active', current_player_index: randomIndex });
       return;
     }
 
-    await supabase.from('games').update({ status: 'active' }).eq('id', game.id);
+    await supabase
+      .from('games')
+      .update({ status: 'active', current_player_index: randomIndex })
+      .eq('id', game.id);
   };
 
   const handlePass = async () => {
@@ -290,6 +335,8 @@ export default function App() {
     setPieceTransform({ rotation: 0, flipH: false, flipV: false });
     setPendingPlacement(null);
     setAiDriverGameId(null);
+    setShowNoMovesModal(false);
+    noMovesTurnKeyRef.current = null;
     if (clearSession) {
       clearSession();
     }
@@ -385,18 +432,21 @@ export default function App() {
       if (isTypingTarget(event)) return;
       if (event.key === ' ') {
         event.preventDefault();
+        if (!selectedPiece) return;
         setPieceTransform((prev) => ({
           ...prev,
           rotation: prev.rotation + (event.shiftKey ? -90 : 90)
         }));
       }
       if (event.key === 'f' || event.key === 'F') {
+        if (!selectedPiece) return;
         setPieceTransform((prev) => ({
           ...prev,
           flipH: !prev.flipH
         }));
       }
       if (event.key === 'v' || event.key === 'V') {
+        if (!selectedPiece) return;
         setPieceTransform((prev) => ({
           ...prev,
           flipV: !prev.flipV
@@ -412,7 +462,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pendingPlacement, handleConfirmPlacement]);
+  }, [pendingPlacement, handleConfirmPlacement, selectedPiece]);
 
   useEffect(() => {
     if (!game || game.status !== 'active') return;
@@ -632,9 +682,45 @@ export default function App() {
             />
           </div>
         ) : game?.status === 'finished' ? (
-          <GameOver placements={placements} onNewGame={handleResetLobby} />
+          <GameOver
+            placements={placements}
+            totalPoints={totalPoints}
+            onNewGame={handleResetLobby}
+          />
         ) : (
           <div className="space-y-6">
+            {showNoMovesModal ? (
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
+                <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                    No Moves
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold">You are out of moves.</h3>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    You can pass this turn to keep the game moving.
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowNoMovesModal(false)}
+                      className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-600 dark:text-slate-200"
+                    >
+                      Got It
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNoMovesModal(false);
+                        handlePass();
+                      }}
+                      className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:-translate-y-0.5 dark:bg-white dark:text-slate-900"
+                    >
+                      Pass Turn
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <GameHeader
               game={game}
               players={playersSorted}

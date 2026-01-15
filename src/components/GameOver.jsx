@@ -18,7 +18,7 @@ function TrophyIcon({ color }) {
   );
 }
 
-export default function GameOver({ placements, onNewGame }) {
+export default function GameOver({ placements, totalPoints, onNewGame }) {
   const winner = placements[0];
   const podiumOrder = [1, 0, 2, 3];
   const podiumHeights = [96, 132, 84, 72];
@@ -39,6 +39,9 @@ export default function GameOver({ placements, onNewGame }) {
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-300">
           A full board and a clean finish.
+        </p>
+        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+          Total points: {totalPoints} (lower is better)
         </p>
       </div>
 
@@ -64,9 +67,12 @@ export default function GameOver({ placements, onNewGame }) {
                     backgroundColor: hexToRgba(displayColor, 0.18)
                   }}
                 >
-                  <span className="mb-2">
-                    {placement.player.player_name || placement.player.color}
-                  </span>
+                  <div className="mb-2 text-center">
+                    <p>{placement.player.player_name || placement.player.color}</p>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">
+                      {placement.score} pts
+                    </p>
+                  </div>
                 </div>
               </div>
             );

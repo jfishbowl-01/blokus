@@ -104,6 +104,8 @@ export default function PiecePalette({
         <div className={gridClass}>
           {PIECES.map((piece) => {
             const isAvailable = remainingIds.has(piece.id);
+            const previewTransform =
+              selectedPieceId === piece.id ? transform : { rotation: 0, flipH: false, flipV: false };
             return (
               <button
                 key={piece.id}
@@ -116,7 +118,7 @@ export default function PiecePalette({
               >
                 <PiecePreview
                   piece={piece}
-                  transform={transform}
+                  transform={previewTransform}
                   selected={selectedPieceId === piece.id}
                   color={displayColor}
                   sizes={sizes}

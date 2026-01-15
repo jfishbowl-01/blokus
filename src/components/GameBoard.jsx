@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { flipCoordsH, flipCoordsV, isValidPlacement, rotateCoords } from '../utils/validation';
+import {
+  flipCoordsH,
+  flipCoordsV,
+  getStartingCorner,
+  isValidPlacement,
+  rotateCoords
+} from '../utils/validation';
 import { DEFAULT_DISPLAY_COLORS, hexToRgba, normalizeHexColor } from '../utils/colors.js';
 
 const GRID_SIZE = 20;
@@ -44,6 +50,7 @@ export default function GameBoard({
     normalizeHexColor(playerDisplayColor) ||
     DEFAULT_DISPLAY_COLORS[playerColor] ||
     '#94A3B8';
+  const startingCorner = isFirstMove ? getStartingCorner(playerColor) : null;
 
   const transformedCoords = useMemo(
     () => getTransformedCoords(piece, transform),
@@ -234,6 +241,10 @@ export default function GameBoard({
               (x === maxIndex && y === 0) ||
               (x === maxIndex && y === maxIndex) ||
               (x === 0 && y === maxIndex);
+            const isStartingCorner =
+              startingCorner && x === startingCorner.x && y === startingCorner.y;
+            const highlightCorner =
+              isStartingCorner && !cell && !isPending && !hasPreview && !isInvalidPreview;
             const cellDisplayColor = cell ? resolveSeatColor(cell) : null;
             const fillColor = !cell
               ? isPending
@@ -257,10 +268,22 @@ export default function GameBoard({
                   0.45
                 )}`
               : undefined;
+            const highlightShadow = highlightCorner
+              ? `0 0 0 2px ${hexToRgba(activeDisplayColor, 0.7)}, 0 0 12px ${hexToRgba(
+                  activeDisplayColor,
+                  0.35
+                )}`
+              : null;
+            const combinedShadow = shadowStyle && highlightShadow
+              ? `${shadowStyle}, ${highlightShadow}`
+              : shadowStyle || highlightShadow || undefined;
+            const cornerBorderColor = highlightCorner
+              ? hexToRgba(activeDisplayColor, 0.7)
+              : null;
             const cellStyle = {
               backgroundColor: cellDisplayColor || fillColor || undefined,
-              borderColor: borderColor || undefined,
-              boxShadow: shadowStyle || undefined
+              borderColor: borderColor || cornerBorderColor || undefined,
+              boxShadow: combinedShadow
             };
 
             return (

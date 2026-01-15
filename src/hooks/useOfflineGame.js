@@ -57,7 +57,8 @@ export function useOfflineGame() {
         ? normalizedDisplayColor
         : DEFAULT_DISPLAY_COLORS.blue;
     const resolvedPlayerName = playerName || 'You';
-    const nextGame = { ...createLocalGame(), status: 'active' };
+    const randomIndex = Math.floor(Math.random() * COLORS.length);
+    const nextGame = { ...createLocalGame(), status: 'active', current_player_index: randomIndex };
     const takenColors = new Set([resolvedDisplayColor]);
     const aiNames = getAiNames(COLORS.length - 1, new Set([resolvedPlayerName]));
     const nextPlayers = COLORS.map((color, index) => {

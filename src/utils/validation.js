@@ -7,6 +7,10 @@ const STARTING_CORNERS = {
   green: { x: 0, y: GRID_SIZE - 1 }
 };
 
+export function getStartingCorner(color) {
+  return STARTING_CORNERS[color] || null;
+}
+
 function normalizeCoords(coords) {
   const minX = Math.min(...coords.map((c) => c[0]));
   const minY = Math.min(...coords.map((c) => c[1]));

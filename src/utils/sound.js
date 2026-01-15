@@ -40,3 +40,29 @@ export function playPlacementSound() {
   osc.start(now);
   osc.stop(now + 0.09);
 }
+
+export function playTurnSound() {
+  const context = getAudioContext();
+  if (!context) return;
+  if (context.state === 'suspended') {
+    context.resume();
+  }
+
+  const now = context.currentTime;
+  const osc = context.createOscillator();
+  const gain = context.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(520, now);
+  osc.frequency.exponentialRampToValueAtTime(740, now + 0.12);
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+  osc.connect(gain);
+  gain.connect(context.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.22);
+}
