@@ -36,6 +36,31 @@ export function useOfflineGame() {
     return nextGame;
   }, []);
 
+  const startSinglePlayer = useCallback(async (playerName) => {
+    setLoading(true);
+    setError(null);
+
+    const nextGame = { ...createLocalGame(), status: 'active' };
+    const nextPlayers = COLORS.map((color, index) => ({
+      id: `local-player-${index}`,
+      game_id: nextGame.id,
+      color,
+      player_name:
+        index === 0 ? playerName || 'You' : `AI ${color[0].toUpperCase()}${color.slice(1)}`,
+      has_passed: false,
+      remaining_pieces: getAllPieceIds(),
+      join_order: index,
+      is_ai: index !== 0
+    }));
+
+    setGame(nextGame);
+    setPlayers(nextPlayers);
+    setMoves([]);
+    setCurrentPlayer(nextPlayers[0]);
+    setLoading(false);
+    return nextGame;
+  }, []);
+
   const joinGame = useCallback(async (_roomCode, playerName) => {
     setLoading(true);
     setError(null);
@@ -130,6 +155,7 @@ export function useOfflineGame() {
     setMoves,
     setCurrentPlayer,
     createGame,
+    startSinglePlayer,
     joinGame,
     placePiece,
     passTurn,
