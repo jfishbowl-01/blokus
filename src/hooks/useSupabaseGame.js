@@ -1,8 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { PIECES } from '../utils/pieces';
+import {
+  DEFAULT_DISPLAY_COLORS,
+  DISPLAY_COLOR_OPTIONS,
+  getUniqueDisplayColor,
+  normalizeHexColor,
+  resolveDisplayColor
+} from '../utils/colors.js';
+import { getAiNames } from '../utils/aiNames.js';
 
 const COLORS = ['blue', 'yellow', 'red', 'green'];
+const SESSION_STORAGE_KEY = 'blokus-session';
+
+function loadSession() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(SESSION_STORAGE_KEY);
+}
 
 function generateRoomCode(length = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -82,6 +111,38 @@ export function useSupabaseGame() {
     return createdGame;
   }, []);
 
+  const resumeSession = useCallback(async () => {
+    const session = loadSession();
+    if (!session?.playerId || !session?.gameId) return null;
+
+    const { data: playerData, error: playerError } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', session.playerId)
+      .single();
+
+    if (playerError || !playerData) {
+      clearSession();
+      return null;
+    }
+
+    const { data: gameData, error: gameError } = await supabase
+      .from('games')
+      .select('*')
+      .eq('id', playerData.game_id)
+      .single();
+
+    if (gameError || !gameData) {
+      clearSession();
+      return null;
+    }
+
+    setGame(gameData);
+    setCurrentPlayer(playerData);
+    fetchGameData(gameData.id);
+    return { player: playerData, game: gameData };
+  }, [fetchGameData]);
+
   const addAiPlayers = useCallback(async (gameId) => {
     if (!gameId) return null;
     setLoading(true);
@@ -99,9 +160,9 @@ export function useSupabaseGame() {
       return null;
     }
 
-    const takenColors = new Set(playersData.map((player) => player.color));
+    const takenSeatColors = new Set(playersData.map((player) => player.color));
     const takenOrders = new Set(playersData.map((player) => player.join_order));
-    const availableColors = COLORS.filter((color) => !takenColors.has(color));
+    const availableColors = COLORS.filter((color) => !takenSeatColors.has(color));
     const availableOrders = COLORS.map((_, index) => index).filter((index) => !takenOrders.has(index));
 
     if (!availableColors.length) {
@@ -109,14 +170,24 @@ export function useSupabaseGame() {
       return [];
     }
 
-    const aiRows = availableColors.map((color, index) => ({
-      game_id: gameId,
-      player_name: `AI ${color[0].toUpperCase()}${color.slice(1)}`,
-      color,
-      join_order: availableOrders[index] ?? playersData.length + index,
-      remaining_pieces: getAllPieceIds(),
-      is_ai: true
-    }));
+    const takenDisplayColors = new Set(playersData.map((player) => resolveDisplayColor(player)));
+    const takenNames = new Set(
+      playersData.map((player) => player.player_name || player.color)
+    );
+    const aiNames = getAiNames(availableColors.length, takenNames);
+    const aiRows = availableColors.map((color, index) => {
+      const displayColor = getUniqueDisplayColor(DEFAULT_DISPLAY_COLORS[color], takenDisplayColors);
+      takenDisplayColors.add(displayColor);
+      return {
+        game_id: gameId,
+        player_name: aiNames[index],
+        color,
+        join_order: availableOrders[index] ?? playersData.length + index,
+        remaining_pieces: getAllPieceIds(),
+        is_ai: true,
+        display_color: displayColor
+      };
+    });
 
     const { data: insertedPlayers, error: insertError } = await supabase
       .from('players')
@@ -137,7 +208,7 @@ export function useSupabaseGame() {
     return insertedPlayers || [];
   }, []);
 
-  const joinGame = useCallback(async (roomCode, playerName) => {
+  const joinGame = useCallback(async (roomCode, playerName, displayColor) => {
     setLoading(true);
     setError(null);
 
@@ -173,6 +244,23 @@ export function useSupabaseGame() {
     }
 
     const color = COLORS[joinOrder];
+    const normalizedDisplayColor = normalizeHexColor(displayColor);
+    const isAllowedColor = normalizedDisplayColor
+      ? DISPLAY_COLOR_OPTIONS.includes(normalizedDisplayColor)
+      : false;
+    if (!isAllowedColor) {
+      setLoading(false);
+      setError(new Error('Pick a color from the palette'));
+      return null;
+    }
+    const isColorTaken = playersData.some(
+      (player) => resolveDisplayColor(player) === normalizedDisplayColor
+    );
+    if (isColorTaken) {
+      setLoading(false);
+      setError(new Error('Color already taken'));
+      return null;
+    }
     const { data: playerData, error: playerError } = await supabase
       .from('players')
       .insert({
@@ -181,7 +269,8 @@ export function useSupabaseGame() {
         color,
         join_order: joinOrder,
         remaining_pieces: getAllPieceIds(),
-        is_ai: false
+        is_ai: false,
+        display_color: normalizedDisplayColor
       })
       .select('*')
       .single();
@@ -196,6 +285,13 @@ export function useSupabaseGame() {
     setGame(gameData);
     setPlayers([...playersData, playerData]);
     setCurrentPlayer(playerData);
+    saveSession({
+      playerId: playerData.id,
+      gameId: gameData.id,
+      roomCode: gameData.room_code,
+      playerName: playerData.player_name,
+      displayColor: playerData.display_color
+    });
     return playerData;
   }, []);
 
@@ -402,6 +498,8 @@ export function useSupabaseGame() {
     passPlayer,
     fetchGameData,
     subscribeToGame,
-    playersById
+    playersById,
+    resumeSession,
+    clearSession
   };
 }

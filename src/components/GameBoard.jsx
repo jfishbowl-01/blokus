@@ -1,54 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { flipCoordsH, flipCoordsV, isValidPlacement, rotateCoords } from '../utils/validation';
+import { DEFAULT_DISPLAY_COLORS, hexToRgba, normalizeHexColor } from '../utils/colors.js';
 
-const COLOR_CLASSES = {
-  blue: 'bg-blue-500',
-  yellow: 'bg-amber-400',
-  red: 'bg-red-500',
-  green: 'bg-emerald-500'
-};
-
-const PREVIEW_FILL_CLASSES = {
-  blue: 'bg-blue-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  yellow: 'bg-amber-300/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  red: 'bg-red-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]',
-  green: 'bg-emerald-400/80 shadow-[0_1px_2px_rgba(15,23,42,0.2)]'
-};
-
-const PENDING_FILL_CLASSES = {
-  blue: 'bg-blue-500/90 shadow-[0_2px_4px_rgba(15,23,42,0.25)]',
-  yellow: 'bg-amber-400/90 shadow-[0_2px_4px_rgba(15,23,42,0.25)]',
-  red: 'bg-red-500/90 shadow-[0_2px_4px_rgba(15,23,42,0.25)]',
-  green: 'bg-emerald-500/90 shadow-[0_2px_4px_rgba(15,23,42,0.25)]'
-};
-
-const PREVIEW_BORDER_CLASSES = {
-  blue: 'border-blue-300/60',
-  yellow: 'border-amber-300/60',
-  red: 'border-red-300/60',
-  green: 'border-emerald-300/60'
-};
-
-const PENDING_BORDER_CLASSES = {
-  blue: 'border-blue-500/60',
-  yellow: 'border-amber-400/60',
-  red: 'border-red-500/60',
-  green: 'border-emerald-500/60'
-};
-
-const PREVIEW_SHADOW_CLASSES = {
-  blue: 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.45)]',
-  yellow: 'shadow-[inset_0_0_0_2px_rgba(251,191,36,0.45)]',
-  red: 'shadow-[inset_0_0_0_2px_rgba(239,68,68,0.45)]',
-  green: 'shadow-[inset_0_0_0_2px_rgba(16,185,129,0.45)]'
-};
-
-const PENDING_SHADOW_CLASSES = {
-  blue: 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.65)]',
-  yellow: 'shadow-[inset_0_0_0_2px_rgba(251,191,36,0.65)]',
-  red: 'shadow-[inset_0_0_0_2px_rgba(239,68,68,0.65)]',
-  green: 'shadow-[inset_0_0_0_2px_rgba(16,185,129,0.65)]'
-};
+const GRID_SIZE = 20;
+const MIN_CELL_SIZE = 14;
+const MAX_CELL_SIZE = 30;
+const BOARD_PADDING = 32;
 
 const INVALID_SHADOW = 'shadow-[inset_0_0_0_2px_rgba(239,68,68,0.7)]';
 
@@ -66,6 +23,8 @@ export default function GameBoard({
   piece,
   transform,
   playerColor,
+  playerDisplayColor,
+  seatColorMap,
   isFirstMove,
   pendingPlacement,
   lastMovePositions,
@@ -76,11 +35,47 @@ export default function GameBoard({
 }) {
   const [hoverCell, setHoverCell] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [activePointerId, setActivePointerId] = useState(null);
+  const [cellSize, setCellSize] = useState(MAX_CELL_SIZE);
+  const boardRef = useRef(null);
+  const gridRef = useRef(null);
+  const maxIndex = GRID_SIZE - 1;
+  const activeDisplayColor =
+    normalizeHexColor(playerDisplayColor) ||
+    DEFAULT_DISPLAY_COLORS[playerColor] ||
+    '#94A3B8';
 
   const transformedCoords = useMemo(
     () => getTransformedCoords(piece, transform),
     [piece, transform]
   );
+
+  useEffect(() => {
+    const container = boardRef.current;
+    if (!container) return;
+    const padding = compact ? 20 : BOARD_PADDING;
+
+    const updateSize = () => {
+      const availableWidth = Math.max(0, container.clientWidth - padding);
+      if (!availableWidth) return;
+      const baseSize = Math.max(
+        MIN_CELL_SIZE,
+        Math.min(MAX_CELL_SIZE, Math.floor(availableWidth / GRID_SIZE))
+      );
+      const nextSize = compact ? Math.max(MIN_CELL_SIZE, baseSize - 4) : baseSize;
+      setCellSize(nextSize);
+    };
+
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize);
+      return () => window.removeEventListener('resize', updateSize);
+    }
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [compact]);
 
   const previewCells = useMemo(() => {
     if (!hoverCell || !piece || !isInteractive) return [];
@@ -121,73 +116,152 @@ export default function GameBoard({
     return set;
   }, [lastMovePositions]);
 
-  const handlePointerDown = (x, y) => {
-    if (!piece || !isInteractive) return;
-    if (onClearPending) onClearPending();
-    setIsDragging(true);
-    setHoverCell({ x, y });
+  const resolveSeatColor = (seatColor) => {
+    if (!seatColor) return null;
+    const mapped =
+      (seatColorMap && seatColorMap[seatColor]) || DEFAULT_DISPLAY_COLORS[seatColor];
+    return normalizeHexColor(mapped) || '#94A3B8';
   };
 
-  const handlePointerEnter = (x, y) => {
-    if (isDragging && isInteractive) {
-      setHoverCell({ x, y });
+  const getCellFromEvent = (event) => {
+    const gridEl = gridRef.current;
+    if (!gridEl) return null;
+    const rect = gridEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const cellSizePx = rect.width / GRID_SIZE;
+    const x = Math.floor((event.clientX - rect.left) / cellSizePx);
+    const y = Math.floor((event.clientY - rect.top) / cellSizePx);
+    if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return null;
+    return { x, y };
+  };
+
+  const handlePointerDown = (event) => {
+    if (!piece || !isInteractive) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const nextCell = getCellFromEvent(event);
+    if (!nextCell) return;
+    event.preventDefault();
+    if (onClearPending) onClearPending();
+    setIsDragging(true);
+    setHoverCell(nextCell);
+    setActivePointerId(event.pointerId);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!isInteractive) return;
+    const nextCell = getCellFromEvent(event);
+    if (!nextCell) return;
+    if (isDragging) {
+      if (event.pointerId !== activePointerId) return;
+      setHoverCell(nextCell);
+      return;
+    }
+    if (event.pointerType === 'mouse') {
+      setHoverCell(nextCell);
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (event) => {
     if (!isDragging || !isInteractive) return;
+    if (event.pointerId !== activePointerId) return;
     setIsDragging(false);
-    if (!piece || !hoverCell) return;
-    if (!isPlacementValid) return;
-    onDropPlacement(previewCells);
+    setActivePointerId(null);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!piece) return;
+    const dropCell = getCellFromEvent(event) || hoverCell;
+    if (!dropCell) return;
+    const canPlace = isValidPlacement(
+      grid,
+      { ...piece, coords: transformedCoords },
+      dropCell,
+      playerColor,
+      isFirstMove
+    );
+    if (!canPlace) return;
+    const dropCells = transformedCoords.map(([x, y]) => ({
+      x: x + dropCell.x,
+      y: y + dropCell.y
+    }));
+    onDropPlacement(dropCells);
   };
+
+  const handlePointerCancel = (event) => {
+    if (!isDragging) return;
+    if (event.pointerId !== activePointerId) return;
+    setIsDragging(false);
+    setActivePointerId(null);
+    setHoverCell(null);
+  };
+
+  const containerClass = compact
+    ? 'select-none overflow-auto rounded-2xl border border-slate-200 bg-gradient-to-br from-white/90 via-white/70 to-slate-50/80 p-2 shadow-lg dark:border-slate-700 dark:from-slate-900/80 dark:via-slate-900/60 dark:to-slate-800/60'
+    : 'select-none overflow-auto rounded-2xl border border-slate-200 bg-gradient-to-br from-white/90 via-white/70 to-slate-50/80 p-4 shadow-lg dark:border-slate-700 dark:from-slate-900/80 dark:via-slate-900/60 dark:to-slate-800/60';
 
   return (
     <div
-      className="select-none overflow-auto rounded-2xl border border-slate-200 bg-gradient-to-br from-white/90 via-white/70 to-slate-50/80 p-4 shadow-lg dark:border-slate-700 dark:from-slate-900/80 dark:via-slate-900/60 dark:to-slate-800/60"
+      ref={boardRef}
+      className={containerClass}
       onMouseLeave={() => {
-        setHoverCell(null);
-        setIsDragging(false);
+        if (!isDragging) {
+          setHoverCell(null);
+        }
       }}
-      onMouseUp={handlePointerUp}
     >
       <div
-        className="board-grid grid"
-        style={compact ? { '--cell-size': '24px' } : undefined}
+        ref={gridRef}
+        className="board-grid grid touch-none"
+        style={{ '--cell-size': `${cellSize}px` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         {grid.map((row, y) =>
           row.map((cell, x) => {
             const previewCell = previewCells.find((pos) => pos.x === x && pos.y === y);
             const hasPreview = Boolean(previewCell);
-            const previewClass = hasPreview
-              ? isPlacementValid
-                ? PREVIEW_SHADOW_CLASSES[playerColor] || ''
-                : `${INVALID_SHADOW} shake`
-              : '';
-            const previewFill =
-              hasPreview && !cell
-                ? PREVIEW_FILL_CLASSES[playerColor] || 'bg-slate-200/70'
-                : '';
             const isPending = pendingSet.has(`${x},${y}`);
-            const pendingFill =
-              isPending && !cell
-                ? PENDING_FILL_CLASSES[playerColor] || 'bg-slate-200/80'
-                : '';
-            const pendingClass = isPending ? PENDING_SHADOW_CLASSES[playerColor] || '' : '';
             const isLastMove = lastMoveSet.has(`${x},${y}`);
             const previewActive = hasPreview || isPending;
-            const borderClass = isPending
-              ? PENDING_BORDER_CLASSES[playerColor] || 'border-slate-200'
-              : hasPreview && !isPlacementValid
+            const isInvalidPreview = hasPreview && !isPlacementValid;
+            const previewClass = isInvalidPreview ? `${INVALID_SHADOW} shake` : '';
+            const borderClass = isInvalidPreview
               ? 'border-red-400/60'
-              : hasPreview
-              ? PREVIEW_BORDER_CLASSES[playerColor] || 'border-slate-200'
               : 'border-slate-100 dark:border-slate-800';
             const isCorner =
               (x === 0 && y === 0) ||
-              (x === 19 && y === 0) ||
-              (x === 19 && y === 19) ||
-              (x === 0 && y === 19);
+              (x === maxIndex && y === 0) ||
+              (x === maxIndex && y === maxIndex) ||
+              (x === 0 && y === maxIndex);
+            const cellDisplayColor = cell ? resolveSeatColor(cell) : null;
+            const fillColor = !cell
+              ? isPending
+                ? hexToRgba(activeDisplayColor, 0.85)
+                : hasPreview
+                ? hexToRgba(activeDisplayColor, isPlacementValid ? 0.65 : 0.3)
+                : null
+              : null;
+            const borderColor =
+              isPending || (hasPreview && isPlacementValid)
+                ? hexToRgba(activeDisplayColor, isPending ? 0.6 : 0.45)
+                : null;
+            const shadowStyle = isPending
+              ? `0 2px 4px rgba(15,23,42,0.25), inset 0 0 0 2px ${hexToRgba(
+                  activeDisplayColor,
+                  0.6
+                )}`
+              : hasPreview && isPlacementValid
+              ? `0 1px 2px rgba(15,23,42,0.2), inset 0 0 0 2px ${hexToRgba(
+                  activeDisplayColor,
+                  0.45
+                )}`
+              : undefined;
+            const cellStyle = {
+              backgroundColor: cellDisplayColor || fillColor || undefined,
+              borderColor: borderColor || undefined,
+              boxShadow: shadowStyle || undefined
+            };
 
             return (
               <button
@@ -197,18 +271,16 @@ export default function GameBoard({
                   if (!isInteractive) return;
                   setHoverCell({ x, y });
                 }}
-                onPointerEnter={() => handlePointerEnter(x, y)}
-                onPointerDown={() => handlePointerDown(x, y)}
-                onPointerUp={handlePointerUp}
                 onFocus={() => {
                   if (!isInteractive) return;
                   setHoverCell({ x, y });
                 }}
                 className={`preview-cell board-cell relative border ${borderClass} ${
-                  cell ? COLOR_CLASSES[cell] : 'bg-white dark:bg-slate-900'
-                } ${pendingFill} ${pendingClass} ${previewFill} ${previewClass} ${
-                  isLastMove ? 'place-settle' : ''
-                } ${previewActive ? 'preview-cell--active' : ''}`}
+                  cell ? '' : 'bg-white dark:bg-slate-900'
+                } ${previewClass} ${isLastMove ? 'place-settle' : ''} ${
+                  previewActive ? 'preview-cell--active' : ''
+                }`}
+                style={cellStyle}
               >
                 {isCorner && !cell ? (
                   <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />

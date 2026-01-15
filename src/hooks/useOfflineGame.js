@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { PIECES } from '../utils/pieces';
+import {
+  DEFAULT_DISPLAY_COLORS,
+  DISPLAY_COLOR_OPTIONS,
+  getUniqueDisplayColor,
+  normalizeHexColor,
+  resolveDisplayColor
+} from '../utils/colors.js';
+import { getAiNames } from '../utils/aiNames.js';
 
 const COLORS = ['blue', 'yellow', 'red', 'green'];
 
@@ -36,22 +44,40 @@ export function useOfflineGame() {
     return nextGame;
   }, []);
 
-  const startSinglePlayer = useCallback(async (playerName) => {
+  const startSinglePlayer = useCallback(async (playerName, displayColor) => {
     setLoading(true);
     setError(null);
 
+    const normalizedDisplayColor = normalizeHexColor(displayColor);
+    const isAllowedColor = normalizedDisplayColor
+      ? DISPLAY_COLOR_OPTIONS.includes(normalizedDisplayColor)
+      : false;
+    const resolvedDisplayColor =
+      isAllowedColor && normalizedDisplayColor
+        ? normalizedDisplayColor
+        : DEFAULT_DISPLAY_COLORS.blue;
+    const resolvedPlayerName = playerName || 'You';
     const nextGame = { ...createLocalGame(), status: 'active' };
-    const nextPlayers = COLORS.map((color, index) => ({
-      id: `local-player-${index}`,
-      game_id: nextGame.id,
-      color,
-      player_name:
-        index === 0 ? playerName || 'You' : `AI ${color[0].toUpperCase()}${color.slice(1)}`,
-      has_passed: false,
-      remaining_pieces: getAllPieceIds(),
-      join_order: index,
-      is_ai: index !== 0
-    }));
+    const takenColors = new Set([resolvedDisplayColor]);
+    const aiNames = getAiNames(COLORS.length - 1, new Set([resolvedPlayerName]));
+    const nextPlayers = COLORS.map((color, index) => {
+      const displayColor =
+        index === 0
+          ? resolvedDisplayColor
+          : getUniqueDisplayColor(DEFAULT_DISPLAY_COLORS[color], takenColors);
+      takenColors.add(displayColor);
+      return {
+        id: `local-player-${index}`,
+        game_id: nextGame.id,
+        color,
+        player_name: index === 0 ? resolvedPlayerName : aiNames[index - 1],
+        has_passed: false,
+        remaining_pieces: getAllPieceIds(),
+        join_order: index,
+        is_ai: index !== 0,
+        display_color: displayColor
+      };
+    });
 
     setGame(nextGame);
     setPlayers(nextPlayers);
@@ -61,7 +87,7 @@ export function useOfflineGame() {
     return nextGame;
   }, []);
 
-  const joinGame = useCallback(async (_roomCode, playerName) => {
+  const joinGame = useCallback(async (_roomCode, playerName, displayColor) => {
     setLoading(true);
     setError(null);
 
@@ -72,6 +98,25 @@ export function useOfflineGame() {
       return null;
     }
 
+    const normalizedDisplayColor = normalizeHexColor(displayColor);
+    const isAllowedColor = normalizedDisplayColor
+      ? DISPLAY_COLOR_OPTIONS.includes(normalizedDisplayColor)
+      : false;
+    if (!isAllowedColor) {
+      setLoading(false);
+      setError(new Error('Pick a color from the palette'));
+      return null;
+    }
+    const resolvedDisplayColor = normalizedDisplayColor;
+    const isColorTaken = players.some(
+      (entry) => resolveDisplayColor(entry) === resolvedDisplayColor
+    );
+    if (isColorTaken) {
+      setLoading(false);
+      setError(new Error('Color already taken'));
+      return null;
+    }
+
     const player = {
       id: `local-player-${joinOrder}`,
       game_id: game?.id || 'local-game',
@@ -79,7 +124,8 @@ export function useOfflineGame() {
       player_name: playerName || COLORS[joinOrder],
       has_passed: false,
       remaining_pieces: getAllPieceIds(),
-      join_order: joinOrder
+      join_order: joinOrder,
+      display_color: resolvedDisplayColor
     };
 
     const nextPlayers = [...players, player];

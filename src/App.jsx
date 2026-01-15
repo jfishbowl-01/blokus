@@ -7,6 +7,7 @@ import PieceControls from './components/PieceControls.jsx';
 import PiecePalette from './components/PiecePalette.jsx';
 import SinglePlayerSetup from './components/SinglePlayerSetup.jsx';
 import StartScreen from './components/StartScreen.jsx';
+import TutorialScreen from './components/TutorialScreen.jsx';
 import { useGameState } from './hooks/useGameState.js';
 import { useOfflineGame } from './hooks/useOfflineGame.js';
 import { useSupabaseGame } from './hooks/useSupabaseGame.js';
@@ -15,6 +16,7 @@ import { findMoveForPlayer } from './utils/ai.js';
 import { playPlacementSound } from './utils/sound.js';
 import { getPieceById, PIECES } from './utils/pieces.js';
 import { calculateScore } from './utils/scoring.js';
+import { resolveDisplayColor } from './utils/colors.js';
 
 function getNextPlayerIndex(players, currentIndex) {
   if (!players.length) return 0;
@@ -28,12 +30,29 @@ function getNextPlayerIndex(players, currentIndex) {
 }
 
 export default function App() {
+  const compactPreferenceKey = 'blokus-compact-mode';
   const [useOfflineMode, setUseOfflineMode] = useState(!isSupabaseConfigured);
   const [pendingPlacement, setPendingPlacement] = useState(null);
   const [screen, setScreen] = useState('home');
   const [aiDifficulty, setAiDifficulty] = useState('easy');
-  const [isCompactBoard, setIsCompactBoard] = useState(false);
+  const [compactPreference, setCompactPreference] = useState(() => {
+    if (typeof window === 'undefined') return 'auto';
+    const stored = window.localStorage.getItem(compactPreferenceKey);
+    if (stored === 'compact' || stored === 'full') return stored;
+    return 'auto';
+  });
+  const [isSmallScreen, setIsSmallScreen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 767px)').matches;
+  });
   const [aiDriverGameId, setAiDriverGameId] = useState(null);
+  const [showTransformControls, setShowTransformControls] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = window.localStorage.getItem('blokus-sound');
+    if (stored === 'off') return false;
+    return true;
+  });
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem('blokus-theme');
@@ -60,7 +79,8 @@ export default function App() {
     placePiece,
     passTurn
   } = gameApi;
-  const { addAiPlayers, placePieceForPlayer, passPlayer } = supabaseGame;
+  const { addAiPlayers, placePieceForPlayer, passPlayer, resumeSession, clearSession } =
+    supabaseGame;
 
   const {
     grid,
@@ -118,6 +138,12 @@ export default function App() {
     const lastMove = moves[moves.length - 1];
     return Array.isArray(lastMove?.grid_positions) ? lastMove.grid_positions : null;
   }, [moves]);
+
+  const isCompactBoard = useMemo(() => {
+    if (compactPreference === 'compact') return true;
+    if (compactPreference === 'full') return false;
+    return isSmallScreen;
+  }, [compactPreference, isSmallScreen]);
 
   const handleStartGame = async () => {
     if (!game) return;
@@ -213,7 +239,25 @@ export default function App() {
     const move = await handlePlacePiece(pendingPlacement);
     if (!move) return;
     setPendingPlacement(null);
-    playPlacementSound();
+    if (soundEnabled) {
+      playPlacementSound();
+    }
+  };
+
+  const handleRotateLeft = () => {
+    setPieceTransform((prev) => ({ ...prev, rotation: prev.rotation - 90 }));
+  };
+
+  const handleRotateRight = () => {
+    setPieceTransform((prev) => ({ ...prev, rotation: prev.rotation + 90 }));
+  };
+
+  const handleFlipH = () => {
+    setPieceTransform((prev) => ({ ...prev, flipH: !prev.flipH }));
+  };
+
+  const handleFlipV = () => {
+    setPieceTransform((prev) => ({ ...prev, flipV: !prev.flipV }));
   };
 
   const handleUndo = async () => {
@@ -246,6 +290,9 @@ export default function App() {
     setPieceTransform({ rotation: 0, flipH: false, flipV: false });
     setPendingPlacement(null);
     setAiDriverGameId(null);
+    if (clearSession) {
+      clearSession();
+    }
     setScreen('home');
   };
 
@@ -263,17 +310,68 @@ export default function App() {
     }
   };
 
-  const handleStartSinglePlayer = async (playerName) => {
+  const handleStartSinglePlayer = async (playerName, displayColor) => {
     setUseOfflineMode(true);
-    await offlineGame.startSinglePlayer(playerName);
+    await offlineGame.startSinglePlayer(playerName, displayColor);
     setScreen('playing');
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const updateScreen = () => {
+      setIsSmallScreen(window.matchMedia('(max-width: 767px)').matches);
+    };
+
+    updateScreen();
+    window.addEventListener('resize', updateScreen);
+    return () => window.removeEventListener('resize', updateScreen);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (compactPreference === 'auto') {
+      window.localStorage.removeItem(compactPreferenceKey);
+      return;
+    }
+    window.localStorage.setItem(compactPreferenceKey, compactPreference);
+  }, [compactPreference, compactPreferenceKey]);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', isDarkMode);
     window.localStorage.setItem('blokus-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('blokus-sound', soundEnabled ? 'on' : 'off');
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (screen !== 'home') return;
+    const params = new URLSearchParams(window.location.search);
+    const room = params.get('room');
+    if (room) {
+      setScreen('multi-setup');
+    }
+  }, [screen]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    const runResume = async () => {
+      const result = await resumeSession?.();
+      if (!result || cancelled) return;
+      setUseOfflineMode(false);
+      setScreen('multi-setup');
+    };
+    runResume();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeSession]);
 
   useEffect(() => {
     const isTypingTarget = (event) => {
@@ -406,37 +504,87 @@ export default function App() {
   ]);
 
   const showHome = screen === 'home';
+  const showSingleTutorial = screen === 'single-tutorial';
   const showSingleSetup = screen === 'single-setup';
+  const showMultiTutorial = screen === 'multi-tutorial';
   const showMultiSetup = screen === 'multi-setup';
   const isPlaying = game && game.status !== 'waiting';
+  const showTransforms = isSmallScreen || showTransformControls;
+  const showTransformToggle = !isSmallScreen;
+  const layoutToggleLabel = isCompactBoard ? 'Full Layout' : 'Compact Layout';
+  const layoutToggleClass = isCompactBoard
+    ? 'rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200'
+    : 'rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200';
+  const themeToggleClass = isCompactBoard
+    ? 'rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200'
+    : 'rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200';
+  const soundToggleClass = isCompactBoard
+    ? 'rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200'
+    : 'rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200';
+
+  const playerDisplayMap = useMemo(() => {
+    const map = {};
+    playersSorted.forEach((player) => {
+      map[player.color] = resolveDisplayColor(player);
+    });
+    return map;
+  }, [playersSorted]);
+  const currentDisplayColor = resolveDisplayColor(currentTurn);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="pointer-events-none absolute -left-24 top-16 h-64 w-64 rounded-full bg-amber-200/40 blur-3xl dark:bg-slate-800/40" />
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-emerald-200/50 blur-3xl dark:bg-slate-800/40" />
 
-      <div className="relative mx-auto max-w-6xl p-6">
-        <div className="mb-6 flex flex-wrap justify-end gap-2">
+      <div className={`relative mx-auto max-w-6xl ${isCompactBoard ? 'p-3 sm:p-4' : 'p-6'}`}>
+        <div className={`flex flex-wrap justify-end gap-2 ${isCompactBoard ? 'mb-4' : 'mb-6'}`}>
           {isPlaying ? (
             <button
               type="button"
-              onClick={() => setIsCompactBoard((prev) => !prev)}
-              className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
+              onClick={() => {
+                setCompactPreference((prev) => {
+                  if (prev === 'compact') return 'full';
+                  if (prev === 'full') return 'compact';
+                  return isCompactBoard ? 'full' : 'compact';
+                });
+              }}
+              className={layoutToggleClass}
             >
-              {isCompactBoard ? 'Full Board' : 'Compact Board'}
+              {layoutToggleLabel}
             </button>
           ) : null}
           <button
             type="button"
+            onClick={() => setSoundEnabled((prev) => !prev)}
+            className={soundToggleClass}
+          >
+            {soundEnabled ? 'Sound On' : 'Sound Off'}
+          </button>
+          <button
+            type="button"
             onClick={() => setIsDarkMode((prev) => !prev)}
-            className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
+            className={themeToggleClass}
           >
             {isDarkMode ? 'Light Mode' : 'Dark Mode'}
           </button>
         </div>
         {showHome ? (
           <StartScreen
-            onSelectMode={(mode) => setScreen(mode === 'single' ? 'single-setup' : 'multi-setup')}
+            onSelectMode={(mode) =>
+              setScreen(mode === 'single' ? 'single-tutorial' : 'multi-tutorial')
+            }
+          />
+        ) : showSingleTutorial ? (
+          <TutorialScreen
+            mode="single"
+            onContinue={() => setScreen('single-setup')}
+            onBack={() => setScreen('home')}
+          />
+        ) : showMultiTutorial ? (
+          <TutorialScreen
+            mode="multi"
+            onContinue={() => setScreen('multi-setup')}
+            onBack={() => setScreen('home')}
           />
         ) : showSingleSetup ? (
           <SinglePlayerSetup
@@ -494,6 +642,8 @@ export default function App() {
               isPlayerTurn={currentTurn?.id === currentPlayer?.id}
               currentPlayerId={currentPlayer?.id}
               onPass={handlePass}
+              onLeave={handleResetLobby}
+              compact={isCompactBoard}
             />
 
             {error ? (
@@ -508,6 +658,8 @@ export default function App() {
                 piece={selectedPieceData}
                 transform={pieceTransform}
                 playerColor={currentTurn?.color}
+                playerDisplayColor={currentDisplayColor}
+                seatColorMap={playerDisplayMap}
                 isFirstMove={isFirstMove}
                 pendingPlacement={pendingPlacement}
                 lastMovePositions={lastMovePositions}
@@ -517,22 +669,39 @@ export default function App() {
                 onClearPending={() => setPendingPlacement(null)}
               />
 
-              <div className="space-y-4">
-                <PiecePalette
-                  player={currentPlayer}
-                  isActive={currentTurn?.id === currentPlayer?.id}
-                  isDisabled={!isPlayerTurn}
-                  selectedPieceId={selectedPiece}
-                  onSelectPiece={setSelectedPiece}
-                  transform={pieceTransform}
-                />
-                <PieceControls
-                  onConfirm={handleConfirmPlacement}
-                  onCancel={() => setPendingPlacement(null)}
-                  onUndo={handleUndo}
-                  showUndo={canUndo}
-                  canConfirm={Boolean(pendingPlacement?.length) && currentTurn?.id === currentPlayer?.id}
-                />
+              <div className="flex flex-col gap-4">
+                <div className="order-2 lg:order-1">
+                  <PiecePalette
+                    player={currentPlayer}
+                    isActive={currentTurn?.id === currentPlayer?.id}
+                    isDisabled={!isPlayerTurn}
+                    selectedPieceId={selectedPiece}
+                    onSelectPiece={setSelectedPiece}
+                    transform={pieceTransform}
+                    compact={isCompactBoard}
+                  />
+                </div>
+                <div className="order-1 lg:order-2">
+                  <PieceControls
+                    onConfirm={handleConfirmPlacement}
+                    onUndo={handleUndo}
+                    showUndo={canUndo}
+                    canConfirm={
+                      Boolean(pendingPlacement?.length) && currentTurn?.id === currentPlayer?.id
+                    }
+                    onRotateLeft={handleRotateLeft}
+                    onRotateRight={handleRotateRight}
+                    onFlipH={handleFlipH}
+                    onFlipV={handleFlipV}
+                    compact={isCompactBoard}
+                    showTransformControls={showTransforms}
+                    showTransformToggle={showTransformToggle}
+                    onToggleTransformControls={() =>
+                      setShowTransformControls((prev) => !prev)
+                    }
+                    showShortcutHint={!isSmallScreen}
+                  />
+                </div>
               </div>
             </div>
           </div>

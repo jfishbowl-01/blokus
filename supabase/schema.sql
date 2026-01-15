@@ -13,17 +13,40 @@ CREATE TABLE IF NOT EXISTS players (
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
   color TEXT NOT NULL CHECK (color IN ('blue', 'yellow', 'red', 'green')),
   player_name TEXT,
+  display_color TEXT,
   has_passed BOOLEAN DEFAULT FALSE,
   remaining_pieces JSONB DEFAULT '[]',
   is_ai BOOLEAN DEFAULT FALSE,
   join_order INT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(game_id, color),
-  UNIQUE(game_id, join_order)
+  UNIQUE(game_id, join_order),
+  CONSTRAINT players_display_color_format
+    CHECK (display_color IS NULL OR display_color ~ '^#[0-9A-Fa-f]{6}$')
 );
 
 ALTER TABLE IF EXISTS players
   ADD COLUMN IF NOT EXISTS is_ai BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE IF EXISTS players
+  ADD COLUMN IF NOT EXISTS display_color TEXT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'players_display_color_format'
+  ) THEN
+    ALTER TABLE players
+      ADD CONSTRAINT players_display_color_format
+      CHECK (display_color IS NULL OR display_color ~ '^#[0-9A-Fa-f]{6}$');
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS players_game_display_color_unique
+  ON players (game_id, lower(display_color))
+  WHERE display_color IS NOT NULL;
 
 -- Moves table
 CREATE TABLE IF NOT EXISTS moves (
